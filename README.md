@@ -33,37 +33,6 @@ Passenger Counting
 Real-time Visualization
 ```
 
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository_url>
-   cd <repository_directory>
-   ```
-
-2. Create and activate a virtual environment (optional but recommended):
-   ```bash
-   python -m venv venv
-   # On Windows
-   venv\Scripts\activate
-   # On Linux/Mac
-   source venv/bin/activate
-   ```
-
-3. Install the required dependencies:
-   ```bash
-   pip install ultralytics opencv-python deep-sort-realtime
-   # or using requirements.txt
-   # pip install -r requirements.txt
-   ```
-
-## Running the System
-
-Start the passenger detection and counting process by running the main script:
-```bash
-python main.py
-```
-*(Note: Replace `main.py` with the actual name of your main script if it is different, and provide any necessary arguments like `--source 0` for webcam).*
 
 ## Authors
 - **MARIA JEBILA M**
