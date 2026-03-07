@@ -1,0 +1,240 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Details - Bus Tracker</title>
+  <link rel="stylesheet" href="css/bus-tracker.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <script>
+    if (localStorage.getItem('isLoggedIn') !== 'true') { window.location.href = 'login.html'; }
+  </script>
+
+  <header class="header">
+    <div class="header-logo">
+      <div class="bus-icon">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z" fill="#fff"/></svg>
+      </div>
+      <span class="header-title">Bus Tracker</span>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <button type="button" class="sidebar-item logout" onclick="handleLogout()">
+        <span class="sidebar-icon icon-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M10 17l1.41-1.41L8.83 13H20v-2H8.83l2.58-2.59L10 7l-7 7 7 7zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+        </span>
+        <span>Logout</span>
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <a href="search.html" class="sidebar-item active">
+        <span class="sidebar-icon icon-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 105.293 14.293l4.707 4.707 1.414-1.414-4.707-4.707A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z"/></svg>
+        </span>
+        <span>Search Bus</span>
+      </a>
+    </div>
+    <div class="sidebar-bottom">
+      <button type="button" class="sidebar-item logout" onclick="handleLogout()">
+        <span class="sidebar-icon icon-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M10 17l1.41-1.41L8.83 13H20v-2H8.83l2.58-2.59L10 7l-7 7 7 7zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+        </span>
+        <span>Logout</span>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <div class="content-card">
+      <div class="content-card-header">
+        <h1>
+          <span class="feature-icon" aria-hidden="true" style="background: rgba(34, 197, 94, 0.14); color: var(--btn-green);">
+            <svg viewBox="0 0 24 24"><path d="M12 2c-4.418 0-8 3.582-8 8 0 5.5 8 12 8 12s8-6.5 8-12c0-4.418-3.582-8-8-8zm0 11a3 3 0 110-6 3 3 0 010 6z"/></svg>
+          </span>
+          Live Bus Location <span id="busNumberBadge" class="bus-number-badge"></span>
+        </h1>
+        <div class="content-card-header-actions">
+          <button type="button" class="btn btn-ghost" onclick="handleBack()">
+            <span style="display:inline-flex;align-items:center;gap:6px;">
+              <svg viewBox="0 0 24 24" style="width:18px;height:18px;"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="backButtonLabel">Back</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <p id="routeDirection" class="route-direction"></p>
+      <div id="map" class="map-container"></div>
+      <h2>Route Schedule</h2>
+      <ul class="route-schedule" id="routeSchedule"></ul>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    var routeId = params.get('id');
+    var fromPlace = params.get('from');
+    var toPlace = params.get('to');
+    var map, busMarker;
+    var etaControl;
+    var busProgress = { value: 0 }; // 0..1 along the route
+    var currentTotalMinutes = 60;
+
+    function loadRouteDetails() {
+      if (!routeId) {
+        document.querySelector('.content-card').innerHTML = '<h1>No route selected</h1>';
+        return;
+      }
+      getRouteDetails(routeId, fromPlace, toPlace).then(function(route) {
+        if (route.message) {
+          document.querySelector('.content-card').innerHTML = '<h1>Route not found</h1>';
+          return;
+        }
+        var coords = (route.coordinates || []).map(function(c) { return [c.lat, c.lng]; });
+        // Special handling for Alangulam ↔ Surandai: add an extra map point for Keela Surandai
+        if (route.from === 'Alangulam' && route.to === 'Surandai' && coords.length >= 3) {
+          var midLat = (coords[1][0] + coords[2][0]) / 2;
+          var midLng = (coords[1][1] + coords[2][1]) / 2;
+          coords.splice(2, 0, [midLat, midLng]);
+        } else if (route.from === 'Surandai' && route.to === 'Alangulam' && coords.length >= 3) {
+          var midLat2 = (coords[0][0] + coords[1][0]) / 2;
+          var midLng2 = (coords[0][1] + coords[1][1]) / 2;
+          coords.splice(1, 0, [midLat2, midLng2]);
+        }
+        if (coords.length < 2) {
+          document.querySelector('.content-card').innerHTML = '<h1>Invalid route data</h1>';
+          return;
+        }
+
+        map = L.map('map').setView(coords[0], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+
+        addEtaControl(map);
+
+        L.polyline(coords, { color: '#28a745', weight: 5 }).addTo(map);
+
+        coords.forEach(function(coord) {
+          L.circleMarker(coord, { radius: 8, fillColor: '#e9a319', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(map);
+        });
+
+        var busNum = route.busNumber || '';
+        var busIcon = L.divIcon({ className: 'bus-marker', html: '<div style="width:28px;height:28px;background:#e9a319;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#fff;">' + (busNum ? busNum : '') + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] });
+        busMarker = L.marker(coords[0], { icon: busIcon }).addTo(map);
+        map.fitBounds(L.latLngBounds(coords).pad(0.1));
+
+        var waypoints = [];
+        // Custom stop list with 15‑minute gaps for key routes.
+        if (route.from === 'Alangulam' && route.to === 'Surandai') {
+          waypoints = ['Alangulam', 'Kadayam', 'Keela Surandai', 'Surandai'];
+        } else if (route.from === 'Surandai' && route.to === 'Alangulam') {
+          waypoints = ['Surandai', 'Keela Surandai', 'Kadayam', 'Alangulam'];
+        } else {
+          waypoints = (route.stops && route.stops.length) ? route.stops.slice() : [];
+          if (!waypoints.length && route.from) {
+            waypoints.push(route.from);
+            (route.stops || []).forEach(function(s) { waypoints.push(s); });
+            if (route.to) waypoints.push(route.to);
+          }
+        }
+        var badge = document.getElementById('busNumberBadge');
+        if (badge) badge.textContent = busNum ? 'Bus ' + busNum : '';
+        var dirEl = document.getElementById('routeDirection');
+        if (dirEl && route.from && route.to) dirEl.textContent = 'Route: ' + route.from + ' \u2192 ' + route.to;
+        var backLabel = document.getElementById('backButtonLabel');
+        if (backLabel) {
+          if (route.from === 'Alangulam' && route.to === 'Surandai') {
+            backLabel.textContent = 'Passenger count: 56';
+          } else if (route.from === 'Surandai' && route.to === 'Alangulam') {
+            backLabel.textContent = 'Passenger count: 67';
+          } else {
+            backLabel.textContent = 'Back';
+          }
+        }
+        var base = new Date(); base.setHours(8, 30, 0, 0);
+        var ul = document.getElementById('routeSchedule');
+        ul.innerHTML = '';
+        waypoints.forEach(function(name, i) {
+          var t = new Date(base); t.setMinutes(base.getMinutes() + i * 15);
+          var li = document.createElement('li');
+          li.innerHTML = '<div class="route-schedule-number">' + (i + 1) + '</div><div><strong>Stop ' + (i + 1) + ': ' + name + '</strong> - ' + t.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) + '</div>';
+          ul.appendChild(li);
+        });
+
+        var totalMin = (route.eta && route.eta.totalMinutes) ? route.eta.totalMinutes : 60;
+        currentTotalMinutes = totalMin;
+        animateBus(coords, totalMin);
+      }).catch(function() {
+        document.querySelector('.content-card').innerHTML = '<h1>Error loading route</h1>';
+      });
+    }
+
+    function addEtaControl(map) {
+      etaControl = L.control({ position: 'topleft' });
+      etaControl.onAdd = function() {
+        var div = L.DomUtil.create('div', 'eta-control');
+        div.innerHTML =
+          '<button type="button" id="etaBtn">Check ETA</button>' +
+          '<div class="eta-text" id="etaText">ETA will appear here</div>';
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+      };
+      etaControl.addTo(map);
+
+      // attach after added
+      setTimeout(function() {
+        var btn = document.getElementById('etaBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function() {
+          var remaining = Math.max(0, Math.round(currentTotalMinutes * (1 - busProgress.value)));
+          var text = remaining <= 0 ? 'Arrived' : ('ETA: ' + remaining + ' mins');
+          var out = document.getElementById('etaText');
+          if (out) out.textContent = text;
+        });
+      }, 0);
+    }
+
+    function animateBus(coords, totalMinutes) {
+      var idx = 0;
+      var steps = coords.length - 1;
+      if (steps < 1) return;
+      var intervalMs = (totalMinutes * 60 * 1000) / (steps * 50);
+      function move() {
+        if (idx >= steps) { idx = 0; }
+        var start = coords[idx], end = coords[idx + 1];
+        var step = 0;
+        var latStep = (end[0] - start[0]) / 50, lngStep = (end[1] - start[1]) / 50;
+        var iv = setInterval(function() {
+          if (step >= 50) { clearInterval(iv); idx++; move(); return; }
+          busMarker.setLatLng([start[0] + latStep * step, start[1] + lngStep * step]);
+          busProgress.value = Math.min(1, ((idx + (step / 50)) / steps));
+          step++;
+        }, intervalMs);
+      }
+      move();
+    }
+
+    function handleLogout() {
+      if (confirm('Logout?')) {
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('username');
+        window.location.href = 'logout.html';
+      }
+    }
+
+    function handleBack() {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = 'search.html';
+      }
+    }
+
+    loadRouteDetails();
+  </script>
+</body>
+</html>
